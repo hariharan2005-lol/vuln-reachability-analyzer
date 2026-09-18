@@ -10,29 +10,6 @@ class OSVClient:
 
     OSV_QUERY_URL = "https://api.osv.dev/v1/query"
 
-    # Stoplist of common Python keywords, builtins, and variables to filter from heuristic extraction
-    HEURISTIC_STOPLIST: Set[str] = {
-        "True", "False", "None", "i", "j", "k", "x", "y",
-        "write", "read", "name", "id", "type", "len",
-        "str", "int", "list", "dict",
-    }
-
-    # Phrases indicating a remediation / fix rather than a vulnerable function
-    REMEDIATION_PHRASES: tuple[str, ...] = (
-        "use",
-        "switch to",
-        "migrate to",
-        "instead of",
-        "replace with",
-        "upgrade to",
-        "recommended",
-        "safer alternative",
-    )
-    REMEDIATION_PATTERN = re.compile(
-        r"\b(?:" + "|".join(r"\s+".join(re.escape(w) for w in p.split()) for p in REMEDIATION_PHRASES) + r")\b",
-        re.IGNORECASE,
-    )
-
     # Built-in known vulnerable symbols for fallback / offline / dummy testing
     MOCK_VULNERABILITIES: Dict[str, Dict[str, List[str]]] = {
         "dummy_vuln_lib": {
@@ -52,13 +29,13 @@ class OSVClient:
         self._rag_extractor = rag_extractor
 
     def get_rag_extractor(self):
-        """Lazily instantiates and returns the SymbolRAGExtractor."""
+        """Lazily instantiates and returns the RAGExtractor."""
         if not self.use_rag:
             return None
         if self._rag_extractor is None:
             try:
-                from analyzer.rag_extractor import SymbolRAGExtractor
-                self._rag_extractor = SymbolRAGExtractor()
+                from analyzer.rag_extractor import RAGExtractor
+                self._rag_extractor = RAGExtractor()
             except Exception:
                 self._rag_extractor = None
         return self._rag_extractor
@@ -109,40 +86,21 @@ class OSVClient:
                     symbols = imp.get("symbols", [])
                     affected_symbols.extend(symbols)
 
-            # 2. Extract symbol from summary/details if structured symbols are empty
-            if not affected_symbols:
-                text = f"{vuln.get('summary', '')} {vuln.get('details', '')}"
-
-                # Try RAG extraction first
-                rag_symbol = None
-                if self.use_rag:
+            # 2. Extract symbol from summary/details using RAG if structured symbols are empty
+            if not affected_symbols and self.use_rag:
+                text = f"{vuln.get('summary', '')} {vuln.get('details', '')}".strip()
+                if text:
                     try:
                         extractor = self.get_rag_extractor()
                         if extractor:
-                            rag_symbol = extractor.extract_symbol(text)
+                            if hasattr(extractor, "extract_symbols"):
+                                symbols = extractor.extract_symbols(text)
+                            else:
+                                sym = extractor.extract_symbol(text)
+                                symbols = [sym] if sym else []
+                            affected_symbols.extend(symbols)
                     except Exception:
-                        rag_symbol = None
-
-                if rag_symbol:
-                    affected_symbols.append(rag_symbol)
-                else:
-                    # Fallback to existing regex heuristic
-                    pattern = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`")
-                    candidate_symbols: List[str] = []
-                    for m in pattern.finditer(text):
-                        sym = m.group(1)
-                        # Check stoplist first
-                        if sym in self.HEURISTIC_STOPLIST:
-                            continue
-                        # Check ~10 words immediately preceding the match for remediation phrases
-                        preceding_words = text[:m.start()].split()[-10:]
-                        preceding_snippet = " ".join(preceding_words)
-                        if self.REMEDIATION_PATTERN.search(preceding_snippet):
-                            continue
-                        candidate_symbols.append(sym)
-
-                    if candidate_symbols:
-                        affected_symbols.extend(candidate_symbols[:5])  # Cap heuristics
+                        pass
 
             results.append(
                 VulnerabilityInfo(

@@ -85,12 +85,20 @@ requests
         self.assertIn("parse_payload", vulns[0].affected_symbols)
         self.assertIn("load_custom_config", vulns[0].affected_symbols)
 
-    def test_parse_osv_response_heuristic_stoplist_filtering(self):
+    def test_parse_osv_response_delegates_to_rag(self):
+        """Verify that unstructured advisory text is delegated to RAGExtractor."""
+        from unittest.mock import MagicMock
+
+        mock_rag = MagicMock()
+        mock_rag.extract_symbols.return_value = ["extracted_func"]
+
+        client = OSVClient(rag_extractor=mock_rag)
         mock_api_data = {
             "vulns": [
                 {
-                    "id": "GHSA-test-stoplist",
-                    "summary": "Setting `True` causes `write` to invoke `unsafe_deserialize`",
+                    "id": "GHSA-rag-delegate",
+                    "summary": "Vulnerability affecting extracted_func in certain situations.",
+                    "details": "More details here.",
                     "aliases": ["CVE-2024-1111"],
                     "affected": [
                         {
@@ -100,20 +108,70 @@ requests
                 }
             ]
         }
-        vulns = self.client._parse_osv_response("sample_lib", "1.0.0", mock_api_data)
-        self.assertEqual(len(vulns), 1)
-        symbols = vulns[0].affected_symbols
-        self.assertNotIn("True", symbols)
-        self.assertNotIn("write", symbols)
-        self.assertIn("unsafe_deserialize", symbols)
 
-    def test_parse_osv_response_heuristic_remediation_filtering(self):
+        vulns = client._parse_osv_response("sample_lib", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        mock_rag.extract_symbols.assert_called_once()
+        self.assertIn("extracted_func", vulns[0].affected_symbols)
+
+    def test_parse_osv_response_no_regex_fallback_when_rag_empty(self):
+        """Verify that when RAG returns no symbols, no regex fallback occurs."""
+        from unittest.mock import MagicMock
+
+        mock_rag = MagicMock()
+        mock_rag.extract_symbols.return_value = []
+
+        client = OSVClient(rag_extractor=mock_rag)
+        # Even with backtick-wrapped function names, empty RAG result means no symbols extracted
+        mock_api_data = {
+            "vulns": [
+                {
+                    "id": "GHSA-no-fallback",
+                    "summary": "Flaw in `backtick_func()` but RAG has low confidence.",
+                    "aliases": ["CVE-2024-2222"],
+                    "affected": [
+                        {
+                            "package": {"name": "sample_lib", "ecosystem": "PyPI"},
+                        }
+                    ]
+                }
+            ]
+        }
+
+        vulns = client._parse_osv_response("sample_lib", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        self.assertEqual(vulns[0].affected_symbols, [])
+
+    def test_parse_osv_response_use_rag_false_returns_empty(self):
+        """Verify that disabling RAG returns empty list for unstructured advisories."""
+        client = OSVClient(use_rag=False)
+        mock_api_data = {
+            "vulns": [
+                {
+                    "id": "GHSA-no-rag",
+                    "summary": "Flaw in `backtick_func()`.",
+                    "aliases": ["CVE-2024-3333"],
+                    "affected": [
+                        {
+                            "package": {"name": "sample_lib", "ecosystem": "PyPI"},
+                        }
+                    ]
+                }
+            ]
+        }
+
+        vulns = client._parse_osv_response("sample_lib", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        self.assertEqual(vulns[0].affected_symbols, [])
+
+    def test_parse_osv_response_rag_remediation_filtering(self):
+        """Verify RAG extractor correctly extracts load and not safe_load in remediation context."""
         mock_api_data = {
             "vulns": [
                 {
                     "id": "GHSA-remediation-test",
                     "summary": "The library is vulnerable via `load()`. Use `safe_load()` instead to avoid the issue.",
-                    "aliases": ["CVE-2024-2222"],
+                    "aliases": ["CVE-2024-4444"],
                     "affected": [
                         {
                             "package": {"name": "yaml_parser", "ecosystem": "PyPI"},
@@ -127,27 +185,6 @@ requests
         symbols = vulns[0].affected_symbols
         self.assertIn("load", symbols)
         self.assertNotIn("safe_load", symbols)
-
-    def test_parse_osv_response_heuristic_no_remediation_regression(self):
-        mock_api_data = {
-            "vulns": [
-                {
-                    "id": "GHSA-no-remediation",
-                    "summary": "Calling `execute_code()` or `eval_expr()` leads to arbitrary execution.",
-                    "aliases": ["CVE-2024-3333"],
-                    "affected": [
-                        {
-                            "package": {"name": "eval_lib", "ecosystem": "PyPI"},
-                        }
-                    ]
-                }
-            ]
-        }
-        vulns = self.client._parse_osv_response("eval_lib", "1.0.0", mock_api_data)
-        self.assertEqual(len(vulns), 1)
-        symbols = vulns[0].affected_symbols
-        self.assertIn("execute_code", symbols)
-        self.assertIn("eval_expr", symbols)
 
 
 if __name__ == "__main__":

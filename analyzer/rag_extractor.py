@@ -133,3 +133,16 @@ class SymbolRAGExtractor:
             return None
 
         return winning_symbol
+
+    def extract_symbols(self, advisory_text: str) -> List[str]:
+        """
+        Extracts vulnerable symbols from advisory text.
+        Returns a list of symbols (empty list if no high-confidence symbol found).
+        """
+        sym = self.extract_symbol(advisory_text)
+        return [sym] if sym else []
+
+
+# Alias for direct import / injection
+RAGExtractor = SymbolRAGExtractor
+

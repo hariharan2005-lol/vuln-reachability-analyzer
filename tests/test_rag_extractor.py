@@ -57,8 +57,8 @@ class TestSymbolRAGExtractor(unittest.TestCase):
         symbol = self.extractor.extract_symbol(dos_advisory)
         self.assertIsNone(symbol)
 
-    def test_osv_client_falls_back_when_rag_returns_none(self):
-        """Verify OSVClient falls back to regex when RAG extraction returns None."""
+    def test_osv_client_returns_empty_when_rag_returns_none(self):
+        """Verify OSVClient returns empty list and does NOT fall back to regex when RAG returns None."""
         client = OSVClient(timeout=10, rag_extractor=self.extractor)
 
         # Advisory with low similarity to training examples, but valid backticks
@@ -80,8 +80,20 @@ class TestSymbolRAGExtractor(unittest.TestCase):
 
         vulns = client._parse_osv_response("sample_lib", "1.0.0", mock_data)
         self.assertEqual(len(vulns), 1)
-        # Even if RAG returns None on unseen/unrelated text, regex fallback extracts the symbol
-        self.assertIn("custom_unseen_helper", vulns[0].affected_symbols)
+        # Without regex fallback, affected_symbols should be empty
+        self.assertEqual(vulns[0].affected_symbols, [])
+
+    def test_extract_symbols_returns_list(self):
+        """Verify extract_symbols returns a list of symbols or empty list."""
+        symbols = self.extractor.extract_symbols(
+            "Application is vulnerable to remote code execution via unsafe_deserialize."
+        )
+        self.assertEqual(symbols, ["unsafe_deserialize"])
+
+        empty_symbols = self.extractor.extract_symbols(
+            "Random sunny weather in the afternoon."
+        )
+        self.assertEqual(empty_symbols, [])
 
 
 if __name__ == "__main__":
