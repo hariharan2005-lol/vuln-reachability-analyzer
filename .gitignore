@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 test_requirements*.txt
 empty_req.txt
+analyzer/data/chroma_db/ 
