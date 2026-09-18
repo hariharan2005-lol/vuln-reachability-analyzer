@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 import requests
 
 from analyzer.models import VulnerabilityInfo
@@ -9,6 +9,13 @@ class OSVClient:
     """Client for querying the OSV.dev vulnerability database."""
 
     OSV_QUERY_URL = "https://api.osv.dev/v1/query"
+
+    # Stoplist of common Python keywords, builtins, and variables to filter from heuristic extraction
+    HEURISTIC_STOPLIST: Set[str] = {
+        "True", "False", "None", "i", "j", "k", "x", "y",
+        "write", "read", "name", "id", "type", "len",
+        "str", "int", "list", "dict",
+    }
 
     # Built-in known vulnerable symbols for fallback / offline / dummy testing
     MOCK_VULNERABILITIES: Dict[str, Dict[str, List[str]]] = {
@@ -78,7 +85,9 @@ class OSVClient:
                 # Look for `module.func()` or `func()` pattern in backticks
                 found = re.findall(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`", text)
                 if found:
-                    affected_symbols.extend(found[:5])  # Cap heuristics
+                    filtered = [sym for sym in found if sym not in self.HEURISTIC_STOPLIST]
+                    if filtered:
+                        affected_symbols.extend(filtered[:5])  # Cap heuristics
 
             results.append(
                 VulnerabilityInfo(

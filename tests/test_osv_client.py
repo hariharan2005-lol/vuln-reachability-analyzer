@@ -85,6 +85,28 @@ requests
         self.assertIn("parse_payload", vulns[0].affected_symbols)
         self.assertIn("load_custom_config", vulns[0].affected_symbols)
 
+    def test_parse_osv_response_heuristic_stoplist_filtering(self):
+        mock_api_data = {
+            "vulns": [
+                {
+                    "id": "GHSA-test-stoplist",
+                    "summary": "Setting `True` causes `write` to invoke `unsafe_deserialize`",
+                    "aliases": ["CVE-2024-1111"],
+                    "affected": [
+                        {
+                            "package": {"name": "sample_lib", "ecosystem": "PyPI"},
+                        }
+                    ]
+                }
+            ]
+        }
+        vulns = self.client._parse_osv_response("sample_lib", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        symbols = vulns[0].affected_symbols
+        self.assertNotIn("True", symbols)
+        self.assertNotIn("write", symbols)
+        self.assertIn("unsafe_deserialize", symbols)
+
 
 if __name__ == "__main__":
     unittest.main()
