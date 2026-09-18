@@ -1,5 +1,5 @@
 from collections import deque
-from typing import List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 from analyzer.call_graph import CallGraph
 from analyzer.models import EntryPoint, ReachabilityResult
@@ -18,28 +18,36 @@ class ReachabilityEngine:
         strategy: str = "dfs",
         find_all_paths: bool = True,
         max_depth: int = 50,
+        package_name: Optional[str] = None,
     ) -> ReachabilityResult:
         """
         Determines whether target_symbol is reachable from any known entry point.
         """
-        matching_targets = set(self.graph.find_matching_nodes(target_symbol))
-        # If no exact match was found, still test against target_symbol directly
-        if not matching_targets:
+        inferred_pkg = package_name
+        if not inferred_pkg and "." in target_symbol:
+            inferred_pkg = target_symbol.split(".")[0]
+
+        matching_targets = set(self.graph.find_matching_nodes(target_symbol, package_name=inferred_pkg))
+        origin_mismatches = self.graph.find_origin_mismatches(target_symbol, package_name=inferred_pkg)
+
+        # If no compatible match was found and no origin mismatches exist, test against target_symbol directly
+        if not matching_targets and not origin_mismatches:
             matching_targets.add(target_symbol)
 
         all_paths: List[List[str]] = []
         reached_entry_points: List[EntryPoint] = []
 
-        for ep in self.entry_points:
-            ep_symbol = ep.symbol
-            if strategy.lower() == "bfs":
-                paths = self._bfs(ep_symbol, matching_targets)
-            else:
-                paths = self._dfs(ep_symbol, matching_targets, max_depth, find_all_paths)
+        if matching_targets:
+            for ep in self.entry_points:
+                ep_symbol = ep.symbol
+                if strategy.lower() == "bfs":
+                    paths = self._bfs(ep_symbol, matching_targets)
+                else:
+                    paths = self._dfs(ep_symbol, matching_targets, max_depth, find_all_paths)
 
-            if paths:
-                all_paths.extend(paths)
-                reached_entry_points.append(ep)
+                if paths:
+                    all_paths.extend(paths)
+                    reached_entry_points.append(ep)
 
         # Remove duplicate paths while preserving order
         unique_paths: List[List[str]] = []
@@ -52,11 +60,18 @@ class ReachabilityEngine:
 
         is_reachable = len(unique_paths) > 0
 
+        notes = None
+        if not is_reachable and origin_mismatches:
+            mismatch_desc = ", ".join(f"call '{node}' resolves to '{orig}'" for node, orig in origin_mismatches[:3])
+            notes = f"possible name collision, origin mismatch: {mismatch_desc}, expected package '{inferred_pkg}'"
+
         return ReachabilityResult(
             target_symbol=target_symbol,
             is_reachable=is_reachable,
             paths=unique_paths,
             entry_points_reached=reached_entry_points,
+            package_name=package_name,
+            notes=notes,
         )
 
     def _dfs(

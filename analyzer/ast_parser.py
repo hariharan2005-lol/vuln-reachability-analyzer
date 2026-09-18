@@ -27,6 +27,9 @@ class ProjectASTVisitor(ast.NodeVisitor):
         # e.g. "unsafe_deserialize" -> "dummy_vuln_lib.unsafe_deserialize"
         # e.g. "dvl" -> "dummy_vuln_lib"
         self.imports: Dict[str, str] = {}
+        # Import origins table: alias -> originating module
+        # e.g. "io" -> "io", "BytesIO" -> "io", "dvl" -> "dummy_vuln_lib", "unsafe_deserialize" -> "dummy_vuln_lib"
+        self.import_origins: Dict[str, str] = {}
 
         # Extracted function definitions: symbol -> FunctionNode
         self.functions: Dict[str, FunctionNode] = {}
@@ -61,6 +64,7 @@ class ProjectASTVisitor(ast.NodeVisitor):
             imported_name = alias.name
             as_name = alias.asname if alias.asname else alias.name
             self.imports[as_name] = imported_name
+            self.import_origins[as_name] = imported_name
             if imported_name == "streamlit" or imported_name.startswith("streamlit."):
                 self.has_streamlit_import = True
                 if self.streamlit_import_lineno is None:
@@ -84,9 +88,12 @@ class ProjectASTVisitor(ast.NodeVisitor):
             as_name = alias.asname if alias.asname else alias.name
             if mod_prefix:
                 full_name = f"{mod_prefix}.{alias.name}"
+                origin_mod = mod_prefix
             else:
                 full_name = alias.name
+                origin_mod = alias.name
             self.imports[as_name] = full_name
+            self.import_origins[as_name] = origin_mod
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -154,6 +161,41 @@ class ProjectASTVisitor(ast.NodeVisitor):
         parts.reverse()
         return ".".join(parts)
 
+    def _resolve_callee_and_origin(self, callee_raw: str) -> Tuple[str, Optional[str]]:
+        """
+        Resolves a callee name against imports or local module scope and returns (callee, origin).
+        e.g.:
+        - 'io.BytesIO' -> ('io.BytesIO', 'io')
+        - 'BytesIO' (when from io import BytesIO) -> ('io.BytesIO', 'io')
+        - 'dvl.unsafe_deserialize' -> ('dummy_vuln_lib.unsafe_deserialize', 'dummy_vuln_lib')
+        - 'unsafe_deserialize' -> ('dummy_vuln_lib.unsafe_deserialize', 'dummy_vuln_lib')
+        - 'process_user' (local function) -> ('app.process_user', 'app')
+        - 'self.method' -> ('app.Class.method', 'app')
+        """
+        parts = callee_raw.split(".")
+        root = parts[0]
+
+        # Check if root is in imports
+        if root in self.imports:
+            imported_base = self.imports[root]
+            origin = self.import_origins.get(root)
+            if len(parts) > 1:
+                return f"{imported_base}.{'.'.join(parts[1:])}", origin
+            return imported_base, origin
+
+        # Check if caller used self.method() or cls.method() inside a class
+        if (root in ("self", "cls")) and self._scope_stack:
+            class_name = self._scope_stack[0]
+            rest = ".".join(parts[1:])
+            return f"{self.module_name}.{class_name}.{rest}", self.module_name
+
+        # If it's a local call without dots, origin is current module
+        if len(parts) == 1:
+            return callee_raw, self.module_name
+
+        # Otherwise return raw callee and root as origin
+        return callee_raw, root
+
     def _resolve_callee(self, callee_raw: str) -> str:
         """
         Resolves a callee name against imports or local module scope.
@@ -164,24 +206,8 @@ class ProjectASTVisitor(ast.NodeVisitor):
           -> 'dummy_vuln_lib.unsafe_deserialize'
         - If 'process_user' is defined in current module -> '{module_name}.process_user'
         """
-        parts = callee_raw.split(".")
-        root = parts[0]
-
-        # Check if root is in imports
-        if root in self.imports:
-            imported_base = self.imports[root]
-            if len(parts) > 1:
-                return f"{imported_base}.{'.'.join(parts[1:])}"
-            return imported_base
-
-        # Check if caller used self.method() or cls.method() inside a class
-        if (root in ("self", "cls")) and self._scope_stack:
-            class_name = self._scope_stack[0]
-            rest = ".".join(parts[1:])
-            return f"{self.module_name}.{class_name}.{rest}"
-
-        # Otherwise return raw callee; graph resolution will attempt local module matching
-        return callee_raw
+        resolved, _ = self._resolve_callee_and_origin(callee_raw)
+        return resolved
 
     def visit_Call(self, node: ast.Call) -> None:
         callee_raw = None
@@ -191,7 +217,7 @@ class ProjectASTVisitor(ast.NodeVisitor):
             callee_raw = self._extract_attribute_name(node.func)
 
         if callee_raw:
-            resolved_callee = self._resolve_callee(callee_raw)
+            resolved_callee, callee_origin = self._resolve_callee_and_origin(callee_raw)
 
             if self._current_function_symbol:
                 caller = self._current_function_symbol
@@ -200,6 +226,7 @@ class ProjectASTVisitor(ast.NodeVisitor):
                     callee_name=resolved_callee,
                     line_number=node.lineno,
                     file_path=self.file_path,
+                    callee_origin=callee_origin,
                 )
                 self.call_sites.append(site)
             elif self._inside_main_block:
@@ -209,6 +236,7 @@ class ProjectASTVisitor(ast.NodeVisitor):
                     callee_name=resolved_callee,
                     line_number=node.lineno,
                     file_path=self.file_path,
+                    callee_origin=callee_origin,
                 )
                 self.main_block_calls.append(site)
             elif not self._scope_stack:
@@ -218,6 +246,7 @@ class ProjectASTVisitor(ast.NodeVisitor):
                     callee_name=resolved_callee,
                     line_number=node.lineno,
                     file_path=self.file_path,
+                    callee_origin=callee_origin,
                 )
                 self.top_level_calls.append(site)
 

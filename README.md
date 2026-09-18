@@ -7,6 +7,7 @@ A static analysis tool that determines not just which dependencies have known vu
 - **AST-Based Call Graph Construction**: Uses Python's native `ast` module to extract functions, classes, methods, import aliases, and function invocations without running target code.
 - **Entry Point Detection**: Automatically discovers Flask routes (`@app.route`), FastAPI endpoints (`@app.get`, `@app.post`), Click CLI commands, Streamlit scripts, general top-level script execution, and `if __name__ == '__main__':` blocks.
 - **OSV.dev Integration**: Connects to the OSV.dev vulnerability database to fetch advisories for dependencies declared in `requirements.txt` and identify vulnerable function symbols.
+- **Local RAG Advisory Symbol Extraction**: Leverages a local embedding model (`all-MiniLM-L6-v2`) and persistent vector store (`chromadb`) to semantically extract vulnerable symbols and eliminate remediation suggestions (e.g. `load` vs `safe_load`) completely offline with no paid API keys.
 - **Cycle-Safe Reachability Analysis**: Implements Depth-First Search (DFS) and Breadth-First Search (BFS) graph traversal algorithms to trace call paths from entry points to vulnerable functions.
 - **Rich Terminal & JSON Output**: Formatted tables, call chains with step-by-step arrows (`login() → process_user() → parse_input() → unsafe_deserialize()`), and JSON output for CI/CD pipelines.
 
@@ -18,9 +19,13 @@ vuln-reachability-analyzer/
 │   ├── __init__.py
 │   ├── ast_parser.py       # AST parsing & symbol/call extraction
 │   ├── call_graph.py       # Directed call graph (nodes/edges)
+│   ├── data/
+│   │   ├── advisory_examples.json  # Curated advisory training pairs
+│   │   └── chroma_db/             # Local ChromaDB persistent vector store
 │   ├── entry_points.py     # Entry point detection (Flask, FastAPI, Streamlit, __main__)
 │   ├── models.py           # Typed dataclasses
 │   ├── osv_client.py       # OSV.dev API client & requirements parser
+│   ├── rag_extractor.py    # Local RAG symbol extractor (SentenceTransformers + ChromaDB)
 │   └── reachability.py     # DFS/BFS traversal engine
 ├── samples/
 │   ├── sample_flask_app/   # Sample Flask application
@@ -83,11 +88,11 @@ python cli.py --path ./samples/sample_flask_app --target-func dummy_vuln_lib.uns
 
 This tool was validated against real-world projects (a 400-node FastAPI codebase and a Streamlit/LangChain app), and testing surfaced a few honest limitations worth knowing about:
 
-**1. Symbol matching can produce false positives on common names.**
-The reachability engine matches vulnerable function names from OSV advisories against the call graph by name, without always distinguishing *which module* a symbol comes from. For example, testing against a real FastAPI project flagged `io.BytesIO()` — a completely standard, safe Python stdlib call — as "REACHABLE" for a `pypdf`-specific vulnerability advisory that also happened to mention `BytesIO`. The call itself was safe; the match was a same-name coincidence, not a real vulnerable code path. Results should be treated as a strong signal to investigate, not a guaranteed finding — always check the reported call path before treating a REACHABLE result as confirmed.
+**1. Module import origin resolution and name collisions.**
+Earlier versions matched vulnerable symbols against the call graph by bare name, causing false positives on common stdlib names (e.g. `io.BytesIO()` being flagged for a `pypdf` advisory). The tool now tracks the resolved import origin of every call site and verifies package compatibility: if a call resolves to the Python standard library (`io`, `os`, `sys`, etc.) or another unrelated package while the vulnerability target belongs to a different package, it is categorized as an origin mismatch (`NOT REACHABLE`) rather than a false alarm. When ambiguous third-party namespaces overlap without explicit imports, users should inspect the reported call path or use qualified target function names.
 
-**2. Heuristic symbol extraction from unstructured OSV advisories is noisy.**
-When an OSV advisory doesn't provide structured `affected.ecosystem_specific.imports` data, the tool falls back to regex-extracting backtick-wrapped terms from the advisory's free-text summary. This can pull in generic words that aren't real function names (e.g. `True`, `i`, `write`, `name` were extracted from a `python-multipart` advisory in testing). These almost always resolve to NOT REACHABLE harmlessly, but they add noise to the output table.
+**2. Unstructured OSV advisories and RAG symbol extraction scope.**
+When an OSV advisory doesn't provide structured `affected.ecosystem_specific.imports` data, the tool uses a local Retrieval-Augmented Generation (RAG) extraction layer powered by `sentence-transformers` (`all-MiniLM-L6-v2`) and `chromadb`. This model runs entirely locally on your machine with zero external API calls or subscription costs. It accurately extracts vulnerable function names while rejecting remediation advice (e.g. distinguishing `load` from `safe_load`). However, because the reference knowledge base consists of a curated set of hand-labeled examples, advisories with unusual phrasing or unseen sentence structures may fall below the similarity confidence threshold (cosine similarity < 0.5) or fail token presence validation. In those cases, the tool safely falls back to the regex heuristic (supported by stoplist filtering and remediation phrase rejection).
 
 **3. Entry point detection covers common frameworks, not all of them.**
 Currently supports Flask, FastAPI, CLI (`argparse`/`click`), Streamlit, and general top-level script execution. Frameworks with less conventional startup patterns (e.g. Django's URL routing, Celery task queues, background job schedulers) aren't yet detected and may require passing `--target-func` directly instead of relying on automatic entry point discovery.

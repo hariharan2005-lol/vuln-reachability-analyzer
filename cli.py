@@ -106,6 +106,7 @@ def run_analysis(
             target_symbol=symbol,
             strategy=strategy,
             find_all_paths=all_paths,
+            package_name=pkg,
         )
         res.package_name = pkg
         res.advisory_id = adv_id
@@ -166,6 +167,9 @@ def output_rich(
         if res.is_reachable:
             status_text = "[bold white on red] REACHABLE [/bold white on red]"
             path_count = f"[red]{len(res.paths)}[/red]"
+        elif res.notes:
+            status_text = "[bold yellow] NOT REACHABLE [/bold yellow]\n[dim](origin mismatch)[/dim]"
+            path_count = "[yellow]0[/yellow]"
         else:
             status_text = "[bold white on green] NOT REACHABLE [/bold white on green]"
             path_count = "[green]0[/green]"
@@ -173,6 +177,13 @@ def output_rich(
 
     console.print(vuln_table)
     console.print()
+
+    mismatched_results = [r for r in results if not r.is_reachable and r.notes]
+    if mismatched_results:
+        console.print("[dim yellow]Note on filtered name collisions / origin mismatches:[/dim yellow]")
+        for res in mismatched_results:
+            console.print(f"  [dim]- {res.target_symbol}: {res.notes}[/dim]")
+        console.print()
 
     # Detailed Call Chains for REACHABLE targets
     reachable_results = [r for r in results if r.is_reachable]
@@ -219,6 +230,8 @@ def output_plain(
         print(f"\n[ {status} ] Target: {res.target_symbol}")
         if res.package_name:
             print(f"  Package:  {res.package_name} ({res.advisory_id})")
+        if not res.is_reachable and res.notes:
+            print(f"  Note:     {res.notes}")
         if res.is_reachable:
             print(f"  Found {len(res.paths)} path(s):")
             for idx, path in enumerate(res.paths, 1):
@@ -244,6 +257,7 @@ def output_json(results: List[ReachabilityResult], entry_points: List[EntryPoint
                 "is_reachable": res.is_reachable,
                 "package_name": res.package_name,
                 "advisory_id": res.advisory_id,
+                "notes": res.notes,
                 "paths": res.paths,
             }
             for res in results

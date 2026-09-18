@@ -64,6 +64,50 @@ def gamma():
         finally:
             Path(temp_path).unlink(missing_ok=True)
 
+    def test_node_origins_and_compatibility(self):
+        graph = CallGraph()
+        graph.add_edge("app.main", "io.BytesIO", callee_origin="io")
+        graph.add_edge("app.main", "pypdf.PdfReader", callee_origin="pypdf")
+
+        self.assertEqual(graph.get_node_origin("io.BytesIO"), "io")
+        self.assertEqual(graph.get_node_origin("pypdf.PdfReader"), "pypdf")
+
+        # Targeting BytesIO with package_name "pypdf" should filter out io.BytesIO
+        matches = graph.find_matching_nodes("BytesIO", package_name="pypdf")
+        self.assertEqual(matches, [])
+
+        # Origin mismatch should detect io.BytesIO
+        mismatches = graph.find_origin_mismatches("BytesIO", package_name="pypdf")
+        self.assertEqual(len(mismatches), 1)
+        self.assertEqual(mismatches[0], ("io.BytesIO", "io"))
+
+        # Targeting PdfReader with package_name "pypdf" should match
+        matches_pdf = graph.find_matching_nodes("PdfReader", package_name="pypdf")
+        self.assertEqual(matches_pdf, ["pypdf.PdfReader"])
+
+    def test_import_origin_tracking_from_parser(self):
+        code = """
+import io
+from pypdf import PdfReader
+
+def do_work():
+    b = io.BytesIO()
+    r = PdfReader()
+"""
+        with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
+            f.write(code)
+            temp_path = f.name
+
+        try:
+            parser = ProjectParser(temp_path)
+            parser.parse()
+            graph = CallGraph.build_from_parser(parser)
+
+            self.assertEqual(graph.get_node_origin("io.BytesIO"), "io")
+            self.assertEqual(graph.get_node_origin("pypdf.PdfReader"), "pypdf")
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

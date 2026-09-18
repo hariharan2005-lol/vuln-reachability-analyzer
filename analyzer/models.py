@@ -31,6 +31,7 @@ class CallSite:
     callee_name: str  # Raw name or resolved target symbol
     line_number: int
     file_path: str
+    callee_origin: Optional[str] = None  # Resolved module/package origin e.g. "io", "dummy_vuln_lib"
 
 
 @dataclass(frozen=True)
@@ -63,3 +64,4 @@ class ReachabilityResult:
     entry_points_reached: List[EntryPoint] = field(default_factory=list)
     advisory_id: Optional[str] = None
     package_name: Optional[str] = None
+    notes: Optional[str] = None

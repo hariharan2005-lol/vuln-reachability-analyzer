@@ -106,6 +106,65 @@ class TestReachabilityEngine(unittest.TestCase):
             "dummy_vuln_lib.unsafe_deserialize"
         ])
 
+    def test_stdlib_name_collision_not_reachable(self):
+        """Code calls io.BytesIO() (stdlib) and vulnerability target is somepkg.BytesIO / pypdf.BytesIO."""
+        collision_graph = CallGraph()
+        # Entry point calls io.BytesIO
+        collision_graph.add_edge("app.login", "io.BytesIO", callee_origin="io")
+
+        ep = [EntryPoint("app.login", EntryPointType.FLASK_ROUTE, "app.py", 10)]
+        engine = ReachabilityEngine(collision_graph, ep)
+
+        # 1. Target with package prefix "somepkg.BytesIO" should NOT match io.BytesIO
+        result_pkg = engine.check_reachability("somepkg.BytesIO")
+        self.assertFalse(result_pkg.is_reachable)
+        self.assertEqual(len(result_pkg.paths), 0)
+        self.assertIsNotNone(result_pkg.notes)
+        self.assertIn("origin mismatch", result_pkg.notes)
+        self.assertIn("io", result_pkg.notes)
+
+        # 2. Target bare "BytesIO" with package_name "pypdf" should NOT match io.BytesIO
+        result_osv = engine.check_reachability("BytesIO", package_name="pypdf")
+        self.assertFalse(result_osv.is_reachable)
+        self.assertEqual(len(result_osv.paths), 0)
+        self.assertIsNotNone(result_osv.notes)
+        self.assertIn("origin mismatch", result_osv.notes)
+
+    def test_same_package_match_is_reachable(self):
+        """Code calls somepkg.BytesIO() and target is somepkg.BytesIO -> should be REACHABLE."""
+        match_graph = CallGraph()
+        match_graph.add_edge("app.login", "somepkg.BytesIO", callee_origin="somepkg")
+
+        ep = [EntryPoint("app.login", EntryPointType.FLASK_ROUTE, "app.py", 10)]
+        engine = ReachabilityEngine(match_graph, ep)
+
+        # 1. Qualified target
+        result_pkg = engine.check_reachability("somepkg.BytesIO")
+        self.assertTrue(result_pkg.is_reachable)
+        self.assertEqual(len(result_pkg.paths), 1)
+        self.assertEqual(result_pkg.paths[0], ["app.login", "somepkg.BytesIO"])
+
+        # 2. Bare symbol with package_name
+        result_osv = engine.check_reachability("BytesIO", package_name="somepkg")
+        self.assertTrue(result_osv.is_reachable)
+        self.assertEqual(len(result_osv.paths), 1)
+        self.assertEqual(result_osv.paths[0], ["app.login", "somepkg.BytesIO"])
+
+    def test_mixed_stdlib_and_target_package_calls(self):
+        """Code calls both io.BytesIO() and somepkg.BytesIO(); only somepkg.BytesIO is flagged."""
+        mixed_graph = CallGraph()
+        mixed_graph.add_edge("app.login", "io.BytesIO", callee_origin="io")
+        mixed_graph.add_edge("app.login", "somepkg.BytesIO", callee_origin="somepkg")
+
+        ep = [EntryPoint("app.login", EntryPointType.FLASK_ROUTE, "app.py", 10)]
+        engine = ReachabilityEngine(mixed_graph, ep)
+
+        result = engine.check_reachability("BytesIO", package_name="somepkg")
+        self.assertTrue(result.is_reachable)
+        # Should only reach somepkg.BytesIO, not io.BytesIO
+        self.assertEqual(len(result.paths), 1)
+        self.assertEqual(result.paths[0], ["app.login", "somepkg.BytesIO"])
+
 
 if __name__ == "__main__":
     unittest.main()
