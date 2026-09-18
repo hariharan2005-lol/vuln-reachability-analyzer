@@ -94,3 +94,14 @@ Currently supports Flask, FastAPI, CLI (`argparse`/`click`), Streamlit, and gene
 
 **4. Dynamic dispatch isn't traced.**
 Calls made via `getattr()`, `**kwargs` unpacking, or other runtime-resolved dispatch patterns aren't captured by the static call graph, since they can't be determined without executing the code. This is a known limitation of static analysis generally, not specific to this tool.
+
+
+## Real-World Validation
+
+To move beyond documenting limitations in the abstract, the tool was run against a real 400-node call graph (29 files, FastAPI backend with `pypdf`, `python-multipart`, and `pillow` dependencies — see [Document Intelligence Pipeline] for the target project). 
+
+- **18 real entry points** were automatically detected (6 FastAPI routes, 12 top-level module entries) with no manual configuration needed.
+- Of the vulnerable symbols pulled from live OSV.dev advisories across 3 packages, **2 were flagged REACHABLE**. Manual review confirmed **1 of the 2 was a false positive** (`io.BytesIO`, a stdlib name collision with an unrelated `pypdf` advisory), and 1 was a plausible true positive.
+- After adding stoplist filtering for common Python keywords/builtins to the OSV heuristic extractor (see commit `b42caaf`), obvious noise symbols (`True`, `i`, `write`, `name`) were eliminated from the output entirely, reducing the total flagged-symbol count without affecting the REACHABLE/NOT REACHABLE findings.
+
+This is a small sample, not a rigorous benchmark — but it's a real number from a real codebase rather than a hypothetical.
