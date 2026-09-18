@@ -1,5 +1,5 @@
 import re
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 import requests
 
 from analyzer.models import VulnerabilityInfo
@@ -46,8 +46,22 @@ class OSVClient:
         }
     }
 
-    def __init__(self, timeout: int = 10):
+    def __init__(self, timeout: int = 10, use_rag: bool = True, rag_extractor: Optional[Any] = None):
         self.timeout = timeout
+        self.use_rag = use_rag
+        self._rag_extractor = rag_extractor
+
+    def get_rag_extractor(self):
+        """Lazily instantiates and returns the SymbolRAGExtractor."""
+        if not self.use_rag:
+            return None
+        if self._rag_extractor is None:
+            try:
+                from analyzer.rag_extractor import SymbolRAGExtractor
+                self._rag_extractor = SymbolRAGExtractor()
+            except Exception:
+                self._rag_extractor = None
+        return self._rag_extractor
 
     def query_package(self, package_name: str, version: Optional[str] = None) -> List[VulnerabilityInfo]:
         """Queries OSV.dev for vulnerabilities affecting a package and version."""
@@ -95,26 +109,40 @@ class OSVClient:
                     symbols = imp.get("symbols", [])
                     affected_symbols.extend(symbols)
 
-            # 2. Heuristic extraction from summary or details if structured symbols are empty
+            # 2. Extract symbol from summary/details if structured symbols are empty
             if not affected_symbols:
                 text = f"{vuln.get('summary', '')} {vuln.get('details', '')}"
-                # Look for `module.func()` or `func()` pattern in backticks
-                pattern = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`")
-                candidate_symbols: List[str] = []
-                for m in pattern.finditer(text):
-                    sym = m.group(1)
-                    # Check stoplist first
-                    if sym in self.HEURISTIC_STOPLIST:
-                        continue
-                    # Check ~10 words immediately preceding the match for remediation phrases
-                    preceding_words = text[:m.start()].split()[-10:]
-                    preceding_snippet = " ".join(preceding_words)
-                    if self.REMEDIATION_PATTERN.search(preceding_snippet):
-                        continue
-                    candidate_symbols.append(sym)
 
-                if candidate_symbols:
-                    affected_symbols.extend(candidate_symbols[:5])  # Cap heuristics
+                # Try RAG extraction first
+                rag_symbol = None
+                if self.use_rag:
+                    try:
+                        extractor = self.get_rag_extractor()
+                        if extractor:
+                            rag_symbol = extractor.extract_symbol(text)
+                    except Exception:
+                        rag_symbol = None
+
+                if rag_symbol:
+                    affected_symbols.append(rag_symbol)
+                else:
+                    # Fallback to existing regex heuristic
+                    pattern = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`")
+                    candidate_symbols: List[str] = []
+                    for m in pattern.finditer(text):
+                        sym = m.group(1)
+                        # Check stoplist first
+                        if sym in self.HEURISTIC_STOPLIST:
+                            continue
+                        # Check ~10 words immediately preceding the match for remediation phrases
+                        preceding_words = text[:m.start()].split()[-10:]
+                        preceding_snippet = " ".join(preceding_words)
+                        if self.REMEDIATION_PATTERN.search(preceding_snippet):
+                            continue
+                        candidate_symbols.append(sym)
+
+                    if candidate_symbols:
+                        affected_symbols.extend(candidate_symbols[:5])  # Cap heuristics
 
             results.append(
                 VulnerabilityInfo(

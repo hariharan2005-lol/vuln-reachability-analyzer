@@ -1,0 +1,122 @@
+[
+  {
+    "id": "ex-01",
+    "text": "The library is vulnerable to arbitrary code execution via load(). Use safe_load() instead to avoid the issue.",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-02",
+    "text": "Vulnerable via load(); please switch to safe_load() for untrusted input deserialization.",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-03",
+    "text": "In PyYAML, yaml.load() allows arbitrary Python code execution. Recommended fix is to migrate to safe_load().",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-04",
+    "text": "Calling load() without Loader parameter is insecure. Use safe_load() as a safer alternative.",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-05",
+    "text": "Arbitrary code execution flaw in load(); replace with safe_load() immediately.",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-06",
+    "text": "Untrusted YAML documents parsed with load() can execute commands. Upgrade to safe_load() or specify FullLoader.",
+    "vulnerable_symbol": "load",
+    "remediation": "safe_load"
+  },
+  {
+    "id": "ex-07",
+    "text": "Application is vulnerable to remote code execution via unsafe_deserialize.",
+    "vulnerable_symbol": "unsafe_deserialize",
+    "remediation": null
+  },
+  {
+    "id": "ex-08",
+    "text": "Untrusted payload passed to unsafe_deserialize() can lead to arbitrary command execution on the host.",
+    "vulnerable_symbol": "unsafe_deserialize",
+    "remediation": null
+  },
+  {
+    "id": "ex-09",
+    "text": "Vulnerability in dummy_vuln_lib allows attacker to trigger unsafe_deserialize without authentication.",
+    "vulnerable_symbol": "unsafe_deserialize",
+    "remediation": null
+  },
+  {
+    "id": "ex-10",
+    "text": "The eval function executes arbitrary user-supplied Python expressions directly.",
+    "vulnerable_symbol": "eval",
+    "remediation": null
+  },
+  {
+    "id": "ex-11",
+    "text": "Insecure use of eval() in mathematical expressions parsing allows remote code execution.",
+    "vulnerable_symbol": "eval",
+    "remediation": null
+  },
+  {
+    "id": "ex-12",
+    "text": "Arbitrary code execution via pickle.loads() when deserializing untrusted data.",
+    "vulnerable_symbol": "loads",
+    "remediation": null
+  },
+  {
+    "id": "ex-13",
+    "text": "Remote code execution occurs through loads() method when handling untrusted byte streams.",
+    "vulnerable_symbol": "loads",
+    "remediation": null
+  },
+  {
+    "id": "ex-14",
+    "text": "The parse_payload() function does not sanitize input before executing system operations.",
+    "vulnerable_symbol": "parse_payload",
+    "remediation": null
+  },
+  {
+    "id": "ex-15",
+    "text": "Command injection vulnerability found in execute_command function.",
+    "vulnerable_symbol": "execute_command",
+    "remediation": null
+  },
+  {
+    "id": "ex-16",
+    "text": "Denial of service vulnerability due to excessive memory consumption on large input files.",
+    "vulnerable_symbol": null,
+    "remediation": null
+  },
+  {
+    "id": "ex-17",
+    "text": "Uncontrolled resource consumption causes the service process to hang and become unresponsive.",
+    "vulnerable_symbol": null,
+    "remediation": null
+  },
+  {
+    "id": "ex-18",
+    "text": "Improper validation of certificate authority during TLS handshake allows man-in-the-middle attacks.",
+    "vulnerable_symbol": null,
+    "remediation": null
+  },
+  {
+    "id": "ex-19",
+    "text": "Algorithmic complexity issue leads to catastrophic backtracking and high CPU utilization when processing regular expressions.",
+    "vulnerable_symbol": null,
+    "remediation": null
+  },
+  {
+    "id": "ex-20",
+    "text": "Timing attack on authentication routine reveals valid user accounts through observable response latency differences.",
+    "vulnerable_symbol": null,
+    "remediation": null
+  }
+]
