@@ -1,0 +1,2 @@
+flask==2.3.2
+dummy_vuln_lib==1.0.0
