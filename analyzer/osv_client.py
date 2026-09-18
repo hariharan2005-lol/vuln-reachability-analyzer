@@ -17,6 +17,22 @@ class OSVClient:
         "str", "int", "list", "dict",
     }
 
+    # Phrases indicating a remediation / fix rather than a vulnerable function
+    REMEDIATION_PHRASES: tuple[str, ...] = (
+        "use",
+        "switch to",
+        "migrate to",
+        "instead of",
+        "replace with",
+        "upgrade to",
+        "recommended",
+        "safer alternative",
+    )
+    REMEDIATION_PATTERN = re.compile(
+        r"\b(?:" + "|".join(r"\s+".join(re.escape(w) for w in p.split()) for p in REMEDIATION_PHRASES) + r")\b",
+        re.IGNORECASE,
+    )
+
     # Built-in known vulnerable symbols for fallback / offline / dummy testing
     MOCK_VULNERABILITIES: Dict[str, Dict[str, List[str]]] = {
         "dummy_vuln_lib": {
@@ -83,11 +99,22 @@ class OSVClient:
             if not affected_symbols:
                 text = f"{vuln.get('summary', '')} {vuln.get('details', '')}"
                 # Look for `module.func()` or `func()` pattern in backticks
-                found = re.findall(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`", text)
-                if found:
-                    filtered = [sym for sym in found if sym not in self.HEURISTIC_STOPLIST]
-                    if filtered:
-                        affected_symbols.extend(filtered[:5])  # Cap heuristics
+                pattern = re.compile(r"`([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)(?:\(\))?`")
+                candidate_symbols: List[str] = []
+                for m in pattern.finditer(text):
+                    sym = m.group(1)
+                    # Check stoplist first
+                    if sym in self.HEURISTIC_STOPLIST:
+                        continue
+                    # Check ~10 words immediately preceding the match for remediation phrases
+                    preceding_words = text[:m.start()].split()[-10:]
+                    preceding_snippet = " ".join(preceding_words)
+                    if self.REMEDIATION_PATTERN.search(preceding_snippet):
+                        continue
+                    candidate_symbols.append(sym)
+
+                if candidate_symbols:
+                    affected_symbols.extend(candidate_symbols[:5])  # Cap heuristics
 
             results.append(
                 VulnerabilityInfo(

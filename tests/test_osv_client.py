@@ -107,6 +107,48 @@ requests
         self.assertNotIn("write", symbols)
         self.assertIn("unsafe_deserialize", symbols)
 
+    def test_parse_osv_response_heuristic_remediation_filtering(self):
+        mock_api_data = {
+            "vulns": [
+                {
+                    "id": "GHSA-remediation-test",
+                    "summary": "The library is vulnerable via `load()`. Use `safe_load()` instead to avoid the issue.",
+                    "aliases": ["CVE-2024-2222"],
+                    "affected": [
+                        {
+                            "package": {"name": "yaml_parser", "ecosystem": "PyPI"},
+                        }
+                    ]
+                }
+            ]
+        }
+        vulns = self.client._parse_osv_response("yaml_parser", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        symbols = vulns[0].affected_symbols
+        self.assertIn("load", symbols)
+        self.assertNotIn("safe_load", symbols)
+
+    def test_parse_osv_response_heuristic_no_remediation_regression(self):
+        mock_api_data = {
+            "vulns": [
+                {
+                    "id": "GHSA-no-remediation",
+                    "summary": "Calling `execute_code()` or `eval_expr()` leads to arbitrary execution.",
+                    "aliases": ["CVE-2024-3333"],
+                    "affected": [
+                        {
+                            "package": {"name": "eval_lib", "ecosystem": "PyPI"},
+                        }
+                    ]
+                }
+            ]
+        }
+        vulns = self.client._parse_osv_response("eval_lib", "1.0.0", mock_api_data)
+        self.assertEqual(len(vulns), 1)
+        symbols = vulns[0].affected_symbols
+        self.assertIn("execute_code", symbols)
+        self.assertIn("eval_expr", symbols)
+
 
 if __name__ == "__main__":
     unittest.main()
