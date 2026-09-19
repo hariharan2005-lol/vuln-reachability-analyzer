@@ -99,7 +99,6 @@ class EntryPointDetector:
         for dec in node.decorators:
             dec_clean = dec.strip()
 
-            # Flask route check
             flask_match = self.FLASK_ROUTE_PATTERN.search(dec_clean)
             if flask_match:
                 route_args = flask_match.group(2)
@@ -111,7 +110,6 @@ class EntryPointDetector:
                     metadata={"decorator": dec_clean, "route_args": route_args}
                 )
 
-            # FastAPI route check
             fastapi_match = self.FASTAPI_ROUTE_PATTERN.search(dec_clean)
             if fastapi_match:
                 http_method = fastapi_match.group(2).upper()
@@ -124,7 +122,6 @@ class EntryPointDetector:
                     metadata={"decorator": dec_clean, "method": http_method, "route_args": route_args}
                 )
 
-            # Click CLI check
             click_match = self.CLICK_COMMAND_PATTERN.search(dec_clean)
             if click_match:
                 return EntryPoint(

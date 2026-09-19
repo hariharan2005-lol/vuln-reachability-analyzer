@@ -30,7 +30,7 @@ class ReachabilityEngine:
         matching_targets = set(self.graph.find_matching_nodes(target_symbol, package_name=inferred_pkg))
         origin_mismatches = self.graph.find_origin_mismatches(target_symbol, package_name=inferred_pkg)
 
-        # If no compatible match was found and no origin mismatches exist, test against target_symbol directly
+        # Fall back to direct symbol match if no origin conflict was detected
         if not matching_targets and not origin_mismatches:
             matching_targets.add(target_symbol)
 
@@ -49,7 +49,6 @@ class ReachabilityEngine:
                     all_paths.extend(paths)
                     reached_entry_points.append(ep)
 
-        # Remove duplicate paths while preserving order
         unique_paths: List[List[str]] = []
         seen_paths = set()
         for p in all_paths:
@@ -92,19 +91,16 @@ class ReachabilityEngine:
 
             callees = self.graph.get_callees(current_node)
             for callee in callees:
-                # Check if callee matches any of our target symbols
                 if callee in target_symbols:
                     found_paths.append(current_path + [callee])
                     if not find_all_paths:
                         return
 
-                # Avoid cycles in the current path
                 if callee not in visited_set:
                     visited_set.add(callee)
                     dfs_visit(callee, current_path + [callee], visited_set)
                     visited_set.remove(callee)
 
-        # Check if the entry point itself is the target
         if start_node in target_symbols:
             return [[start_node]]
 
@@ -127,7 +123,7 @@ class ReachabilityEngine:
             for callee in self.graph.get_callees(node):
                 if callee in target_symbols:
                     found_paths.append(path + [callee])
-                    return found_paths  # Return first shortest path
+                    return found_paths
 
                 if callee not in visited:
                     visited.add(callee)

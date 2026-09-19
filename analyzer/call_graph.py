@@ -42,7 +42,6 @@ def is_origin_compatible(origin: Optional[str], target_package: Optional[str]) -
     if orig_root in STDLIB_MODULES and pkg_norm != orig_root:
         return False
 
-    # Check if origin matches target package
     if orig_norm == pkg_norm or orig_root == pkg_norm:
         return True
     if orig_norm.startswith(f"{pkg_norm}."):
@@ -196,11 +195,9 @@ class CallGraph:
         Resolves callee relative to caller's module if it's an unqualified local call.
         e.g. caller = 'app.login', callee = 'process_user' -> 'app.process_user' (if defined)
         """
-        # If it's already an exact match to a defined symbol
         if callee_raw in defined_symbols:
             return callee_raw
 
-        # Extract caller's module
         module_prefix = caller_symbol.rsplit(".", 1)[0]
         # In case caller is a method (e.g. 'app.MyClass.method'), check root module too
         root_module = caller_symbol.split(".")[0]

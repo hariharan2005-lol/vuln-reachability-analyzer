@@ -53,18 +53,14 @@ def run_analysis(
     if not os.path.exists(project_path):
         raise FileNotFoundError(f"Project directory not found: {project_path}")
 
-    # 1. Parse AST
     parser = ProjectParser(project_path)
     parser.parse()
 
-    # 2. Build Call Graph
     graph = CallGraph.build_from_parser(parser)
 
-    # 3. Detect Entry Points
     detector = EntryPointDetector(parser)
     entry_points = detector.detect()
 
-    # 4. Resolve Target Symbols
     targets_to_check: List[tuple[str, Optional[str], Optional[str]]] = []  # (symbol, pkg_name, advisory_id)
 
     if target_func:
@@ -97,7 +93,6 @@ def run_analysis(
                 for sym in v.affected_symbols:
                     targets_to_check.append((sym, v.package_name, v.advisory_id))
 
-    # 5. Reachability Check
     engine = ReachabilityEngine(graph, entry_points)
     results: List[ReachabilityResult] = []
 
@@ -124,7 +119,6 @@ def output_rich(
 ) -> None:
     console = Console(highlight=False)
 
-    # Header Panel
     console.print()
     header_content = (
         f"[bold cyan]Target Project:[/bold cyan] {project_path}\n"
@@ -135,7 +129,6 @@ def output_rich(
     )
     console.print(Panel(header_content, title="[bold white]Vulnerability Reachability Analysis[/bold white]", border_style="cyan"))
 
-    # Entry Points Table
     if entry_points:
         ep_table = Table(title="Detected Entry Points", show_header=True, header_style="bold magenta")
         ep_table.add_column("Symbol", style="cyan")
@@ -155,7 +148,6 @@ def output_rich(
         console.print(ep_table)
         console.print()
 
-    # Reachability Results Table & Details
     vuln_table = Table(title="Vulnerability Reachability Summary", show_header=True, header_style="bold blue")
     vuln_table.add_column("Target Vulnerable Function", style="white", no_wrap=True)
     vuln_table.add_column("Package / Advisory", style="yellow")
@@ -185,7 +177,6 @@ def output_rich(
             console.print(f"  [dim]- {res.target_symbol}: {res.notes}[/dim]")
         console.print()
 
-    # Detailed Call Chains for REACHABLE targets
     reachable_results = [r for r in results if r.is_reachable]
     if reachable_results:
         console.print("[bold red](!) REACHABLE CALL PATHS DETECTED:[/bold red]")

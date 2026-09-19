@@ -31,27 +31,18 @@ class ProjectASTVisitor(ast.NodeVisitor):
         # e.g. "io" -> "io", "BytesIO" -> "io", "dvl" -> "dummy_vuln_lib", "unsafe_deserialize" -> "dummy_vuln_lib"
         self.import_origins: Dict[str, str] = {}
 
-        # Extracted function definitions: symbol -> FunctionNode
         self.functions: Dict[str, FunctionNode] = {}
-
-        # Extracted call sites: List of CallSite
         self.call_sites: List[CallSite] = []
-
-        # Calls made directly in if __name__ == '__main__': block
         self.main_block_calls: List[CallSite] = []
-
         # Module-level calls outside any function/class and outside __main__
         self.top_level_calls: List[CallSite] = []
 
-        # Track Streamlit imports
         self.has_streamlit_import: bool = False
         self.streamlit_import_lineno: Optional[int] = None
 
         # Current scope stack (e.g. ['MyClass'])
         self._scope_stack: List[str] = []
-        # Current enclosing function symbol
         self._current_function_symbol: Optional[str] = None
-        # Track whether we are inside if __name__ == '__main__':
         self._inside_main_block: bool = False
 
     def _get_current_symbol_prefix(self) -> str:
@@ -135,7 +126,6 @@ class ProjectASTVisitor(ast.NodeVisitor):
         self._current_function_symbol = symbol
         self._scope_stack.append(node.name)
 
-        # Visit children (statements inside function)
         self.generic_visit(node)
 
         self._scope_stack.pop()
@@ -175,7 +165,6 @@ class ProjectASTVisitor(ast.NodeVisitor):
         parts = callee_raw.split(".")
         root = parts[0]
 
-        # Check if root is in imports
         if root in self.imports:
             imported_base = self.imports[root]
             origin = self.import_origins.get(root)
@@ -193,7 +182,6 @@ class ProjectASTVisitor(ast.NodeVisitor):
         if len(parts) == 1:
             return callee_raw, self.module_name
 
-        # Otherwise return raw callee and root as origin
         return callee_raw, root
 
     def _resolve_callee(self, callee_raw: str) -> str:
@@ -318,7 +306,6 @@ class ProjectParser:
                 content = f.read()
             tree = ast.parse(content, filename=file_path)
         except Exception as e:
-            # Skip syntax errors gracefully or log
             print(f"Warning: Failed to parse {file_path}: {e}")
             return
 

@@ -28,17 +28,13 @@ class SymbolRAGExtractor:
 
         os.makedirs(self.db_dir, exist_ok=True)
 
-        # Initialize SentenceTransformer embedding model
         self.model = SentenceTransformer(model_name)
-
-        # Initialize persistent ChromaDB client & collection
         self.client = chromadb.PersistentClient(path=self.db_dir)
         self.collection = self.client.get_or_create_collection(
             name="advisory_symbols",
             metadata={"hnsw:space": "cosine"}
         )
 
-        # Populate knowledge base if collection is empty
         self._ensure_knowledge_base()
 
     def _ensure_knowledge_base(self) -> None:
@@ -65,7 +61,6 @@ class SymbolRAGExtractor:
             for ex in examples
         ]
 
-        # Compute embeddings in batch
         embeddings = self.model.encode(texts, convert_to_numpy=True).tolist()
 
         self.collection.add(
@@ -87,10 +82,8 @@ class SymbolRAGExtractor:
         if self.collection.count() == 0:
             return None
 
-        # Embed query text
         query_embedding = self.model.encode(advisory_text.strip(), convert_to_numpy=True).tolist()
 
-        # Retrieve top-3 nearest neighbors
         n_results = min(3, self.collection.count())
         results = self.collection.query(
             query_embeddings=[query_embedding],
@@ -107,7 +100,6 @@ class SymbolRAGExtractor:
         top_distance = distances[0]
         top_similarity = max(0.0, min(1.0, 1.0 - top_distance))
 
-        # Check top match confidence threshold
         if top_similarity < self.confidence_threshold:
             return None
 
@@ -121,7 +113,6 @@ class SymbolRAGExtractor:
         if not symbol_weights:
             return None
 
-        # Select symbol with highest weighted vote
         winning_symbol, total_weight = max(symbol_weights.items(), key=lambda item: item[1])
 
         # If winning symbol is empty (e.g. no-symbol / DoS pattern), return None
